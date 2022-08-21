@@ -4,13 +4,6 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-# from selenium import webdriver
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver import ChromeOptions
-# from webdriver_manager.chrome import ChromeDriverManager
-# from selenium.webdriver.chrome.service import Service as ChromeService
-
-import re
 
 def crawl() -> str:
     '''
@@ -61,14 +54,12 @@ def crawl() -> str:
     ##### 장르, 스토리, 형식, 연재 시작일 정보 없음
     with open(file=JSON_FILE_PATH, mode='r', encoding=ENCODING) as f:
         data: List = json.load(f) #<class 'list'> of json objects
-        for obj in data: # for each json object--<class 'dict'>--,
-            # https://m.comic.naver.com/webtoon/list?titleId={id}}
+        for obj in data: # for each json object (<class 'dict'>)
             url: str = str(obj['url']).replace('m.comic.naver.com', 'comic.naver.com')
 
             # check if adult only
             html = requests.get(url).text
             soup = BeautifulSoup(html, 'html.parser')
-            #detail = soup.select_one('.comicinfo > .detail')
             detail = soup.find('p', {'class': 'detail_info'})
             age = detail.find('span', {'class': 'age'})
             age: str = '전체연령가' if age == None else age.text
@@ -149,11 +140,11 @@ def crawl() -> str:
                 thumbnail = obj['img']
                 thumbnail_list.append(thumbnail)
 
-                if week < 7: # if not finish
+                if week < 7: # if not finished
                     url = url + f'&weekday={WEEKS[week]}'
                 url_list.append(url)
 
-                # this is naver webtoon crawler.
+                # crawls from only naver webtoon.
                 platform_list.append('naver')
 
     # construct truct data frame
@@ -171,7 +162,6 @@ def crawl() -> str:
         'author': author_list,
         'genre': genre_list,
         'tag': tag_list,
-        # 'day': day_list,
     }).set_index('id')
 
     df.to_excel(NAVER_INFO_FILE)
