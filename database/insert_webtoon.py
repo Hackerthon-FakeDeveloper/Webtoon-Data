@@ -4,7 +4,7 @@ import pymysql
 from pymysql.cursors import Cursor # for typing
 from datetime import datetime
 from database_info import get_my_database
-# from naver_crawler import crawl
+# from crawler.naver_crawler import crawl
 
 def get_data_frame() -> pd.DataFrame:
     path: str = '.\\naver_webtoon_info.xlsx'
