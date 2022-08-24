@@ -3,36 +3,45 @@ from typing import List
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+import winsound
+from typing import Dict, Any
+
+# from selenium import webdriver
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver import ChromeOptions
+# from webdriver_manager.chrome import ChromeDriverManager
+# from selenium.webdriver.chrome.service import Service as ChromeService
 
 
-def crawl() -> str:
-    '''
-    key of json file
-    _id: identifier of each comic
-    additional: {'new': <bool>, 'adult': <bool>, 'rest': <bool>, 'up': <bool>}
-    week: [0], [1], ..., [7], 7 means 'finished'
-    service: providing platform
-    img: URL of thumbnail
-    url: URL of webtoon(online comic)
-    author: author-1,author-2,...,author-n
-    title: title
-    '''
-    JSON_FILE_PATH: str = 'naver_data.json'
+'''
+key of json file
+_id: identifier of each comic
+additional: {'new': <bool>, 'adult': <bool>, 'rest': <bool>, 'up': <bool>}
+week: [0], [1], ..., [7], 7 means 'finished'
+service: providing platform
+img: URL of thumbnail
+url: URL of webtoon(online comic)
+author: author-1,author-2,...,author-n
+title: title
+'''
+JSON_PATH: str = '.\\data\\naver_json_data.json'
+EXCEL_PATH: str = '.\\data\\naver_excel_data.xlsx'
+
+def crawl() -> pd.DataFrame:
     ENCODING: str = 'utf-8'
     NO_INFO: str = 'no_info'
     WEEKS: List[str] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-    NAVER_INFO_FILE: str = 'naver_webtoon_info.xlsx'
-
+    
     SERIALIZING: int = 0
     SUSPEND: int = 1
     COMPLELTE: int = 2
 
     html:str = requests.get('https://korea-webtoon-api.herokuapp.com/naver').text
-    with open(JSON_FILE_PATH, 'wt', encoding=ENCODING) as f:
+    with open(JSON_PATH, 'wt', encoding=ENCODING) as f:
         f.write(html)
         f.flush()
         f.close()
-    
+
     id_list: List[str] = []
     description_list: List[str] = []
     is_adult_list: List[str] = [] # if webtoon is adult-only 1 else 0
@@ -40,23 +49,22 @@ def crawl() -> str:
     start_date_list: List[str] = []
     thumbnail_list: List[str] = [] # URL of thumbnail
     title_list: List[str] = []
-    url_list: List[str] = [] # URL of webtoon(online comic)
+    url_list: List[str] = [] # URL of webtoon
     serial_status_list: List[str] = [] # int
 
     author_list: List[str] = [] # 'author1/author2/author3...', to 'author' table
     tag_list: List[str] = [] #'tag1,tag2,tag3...', to 'tag' table
-    day_list: List[str] = []  # 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'fin'
     genre_list: List[str] = []
 
     #################################################################
-    # 모든 웹툰의 제목, 작가, 연재 요일, 상태, 청불 여부, 썸네일 url, 웹툰 url
-    # 
-    ##### 장르, 스토리, 형식, 연재 시작일 정보 없음
-    with open(file=JSON_FILE_PATH, mode='r', encoding=ENCODING) as f:
-        data: List = json.load(f) #<class 'list'> of json objects
-        for obj in data: # for each json object (<class 'dict'>)
+    # 모든 웹툰의 제목, 작가, 상태, 청불 여부, 썸네일 url, 웹툰 url, 장르, 태그, 소개글
+    #################################################################
+    with open(file=JSON_PATH, mode='r', encoding=ENCODING) as f:
+        data: List[Dict[str, Any]] = json.load(f) #<class 'list'> of json objects
+        for obj in data: # for each json object--<class 'dict'>--,
+            # https://m.comic.naver.com/webtoon/list?titleId={id}}
             url: str = str(obj['url']).replace('m.comic.naver.com', 'comic.naver.com')
-
+            print(url)
             # check if adult only
             html = requests.get(url).text
             soup = BeautifulSoup(html, 'html.parser')
@@ -73,12 +81,8 @@ def crawl() -> str:
                 title_list.append(title)
 
                 # get author
-                author = obj['author'].replace(',', '/')
+                author = obj['author'].replace(',', '/').strip()
                 author_list.append(author)
-
-                # get uploading day of week
-                week = obj['week'][0]
-                day_list.append(week)
 
                 # get description
                 description = soup.select_one('.comicinfo > .detail').select_one('p')
@@ -126,6 +130,7 @@ def crawl() -> str:
                 tag_list.append(tag)
 
                 # get serial status
+                week = obj['week'][0]
                 serial_status = SERIALIZING
                 if week == 7:
                     serial_status = COMPLELTE
@@ -140,11 +145,12 @@ def crawl() -> str:
                 thumbnail = obj['img']
                 thumbnail_list.append(thumbnail)
 
-                if week < 7: # if not finished
+                # get url
+                if week < 7: # if not finish
                     url = url + f'&weekday={WEEKS[week]}'
                 url_list.append(url)
 
-                # crawls from only naver webtoon.
+                # this is naver webtoon crawler.
                 platform_list.append('naver')
 
     # construct truct data frame
@@ -164,7 +170,10 @@ def crawl() -> str:
         'tag': tag_list,
     }).set_index('id')
 
-    df.to_excel(NAVER_INFO_FILE)
-    #return NAVER_INFO_FILE
+    df.to_excel(EXCEL_PATH)
+    df.to_json(JSON_PATH, orient='records', indent=4, force_ascii=False)
+
+    winsound.Beep(1000, 1000)
 
     return df
+
