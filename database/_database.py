@@ -89,18 +89,18 @@ key: str
     default: 'test'
 '''
 def __get_connection(key: str='test') -> pymysql.connections.Connection:
-    _database: Dict[str, Any] = \
+    __database: Dict[str, Any] = \
         __get_my_database() if key == 'my' else __get_test_database()
 
     # connect to DB
     conn = pymysql.connect(
-        host=_database['host'],
-        user=_database['user'],
-        password=_database['password'],
-        db=_database['db'],
-        port=_database['port'],
-        charset=_database['charset'],
-        use_unicode=_database['use_unicode'] # default is True
+        host=__database['host'],
+        user=__database['user'],
+        password=__database['password'],
+        db=__database['db'],
+        port=__database['port'],
+        charset=__database['charset'],
+        use_unicode=__database['use_unicode'] # default is True
     )
 
     return conn
