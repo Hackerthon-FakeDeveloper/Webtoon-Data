@@ -24,7 +24,6 @@ gender
 'F': Female
 'M': Male
 'N': No info
-
 '''
 
 EXCEL_PATH: str = '.\\data\\user_data.xlsx'
