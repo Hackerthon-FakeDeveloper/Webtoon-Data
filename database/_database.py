@@ -1,10 +1,11 @@
-from typing import Dict
-from typing import Any
+from typing import Dict, List, Any
 from pymysql.cursors import Cursor # for typing
 
 import pandas as pd
 import pymysql
 from datetime import datetime
+from random import randrange
+from datetime import timedelta
 
 # add parent path
 import sys, os
@@ -15,7 +16,9 @@ import crawler.kakao_crawler as kc
 import crawler.lezhin_crawler as lc
 
 import generator.user_data_generator as udg
-import generator.rating_data_generator as rdg
+import generator.review_data_generator as rdg
+import generator.review_like_data_generator as rldg
+import generator.webtoon_like_data_generator as wldg
 
 
 def __get_my_database() -> Dict[str, Any]:
@@ -122,7 +125,7 @@ Parameters
 ----------
 table: str
     table name to count rows
-    'webtoon' or 'users'
+    'webtoon', 'users' or 'review'
     default: 'webtoon'
 
 db_key: str
@@ -131,7 +134,7 @@ db_key: str
 '''
 # get counts of table
 def count_rows(db_key: str='test', table: str='webtoon') -> int:
-    if table != 'webtoon' and table != 'users':
+    if table != 'webtoon' and table != 'users' and table != 'review':
         return 0
 
     conn = __get_connection(key=db_key)
@@ -386,10 +389,17 @@ def __insert_review(
         FROM review'
     cursor.execute(get_seqs_query)
     seqs = cursor.fetchall()
+
+    get_webtoon_seq_query = \
+        f'SELECT webtoon_seq \
+        FROM webtoon'
+    cursor.execute(get_webtoon_seq_query)
+    webtoon_seqs = [int(seq[0]) for seq in cursor.fetchall()]
+
     for i in df.index:
         row = df.loc[i]
         user_seq = int(row['user_seq'])
-        webtoon_seq = int(row['webtoon_seq'])
+        webtoon_seq = webtoon_seqs[int(row['webtoon_seq_index'])]
         if (user_seq, webtoon_seq) not in seqs:
             now = str(datetime.now().date())
             content = str(row['content'])
@@ -417,7 +427,6 @@ def __insert_review(
                 {user_seq}, \
                 {webtoon_seq})'
             affected_rows_num = cursor.execute(insert_nickname_query)
-
             if affected_rows_num == 1:
                 conn.commit()
             else:
@@ -436,17 +445,275 @@ method: str
     'new' -> generate new data
 '''
 def insert_review(db_key: str='test', method: str='file'):
-    if method=='file':
+    if method == 'file':
         try:
             df = pd.read_excel(rdg.EXCEL_PATH)
         except:
             return
     else:
-        df = udg.generate()
+        df = rdg.generate()
     conn = __get_connection(key=db_key)
     cursor = __get_cursor(conn=conn)
 
     __insert_review(conn=conn, cursor=cursor, df=df)
+
+    __close_cursor(cursor=cursor)
+    __close_connection(conn=conn)
+
+
+def __insert_webtoon_tag(
+    conn: pymysql.connections.Connection,
+    cursor: Cursor,
+    df: pd.DataFrame
+):
+    select_webtoon_tag_query = \
+    f'SELECT tag_seq, webtoon_seq \
+    FROM webtoon_tag'
+    affected_rows_num = cursor.execute(select_webtoon_tag_query)
+    if affected_rows_num < 0:
+        print('select webtoon_tag error')
+        return
+    webtoon_tags = cursor.fetchall()
+    for i in df.index:
+        row = df.loc[i]
+        get_webtoon_seq_query = \
+            f'SELECT webtoon_seq \
+            FROM webtoon \
+            WHERE url=\'{str(row["url"])}\''
+        affected_rows_num = cursor.execute(get_webtoon_seq_query)
+        if affected_rows_num != 1:
+            print('select webtoon_seq error')
+            continue
+
+        webtoon_seq = int(cursor.fetchone()[0])
+        tags = str(row['tag']).replace('.', ',').split(',')
+        for tag in tags:
+            get_tag_seq_query = \
+                f'SELECT tag_seq \
+                FROM tag \
+                WHERE name=\'{tag.strip()}\''
+            affected_rows_num = cursor.execute(get_tag_seq_query)
+            if affected_rows_num != 1:
+                print(get_tag_seq_query)
+                print(f'select tag_seq error: {tag}, {affected_rows_num}')
+                continue
+            tag_seq = int(cursor.fetchone()[0])
+
+            if (tag_seq, webtoon_seq) not in webtoon_tags:
+                insert_webtoon_tag_query = \
+                    f'INSERT INTO \
+                    webtoon_tag( \
+                        tag_seq, \
+                        webtoon_seq) \
+                    VALUES( \
+                        {tag_seq}, \
+                        {webtoon_seq})'
+                affected_rows_num = cursor.execute(insert_webtoon_tag_query)
+                if affected_rows_num != 1:
+                    print(f'insert webtoon_tag error: ({tag_seq}, {webtoon_seq})')
+                else:
+                    conn.commit()
+
+'''
+Parameters
+----------
+df_key: str
+    'excel' or 'json'
+    default: 'excel'
+
+platform: str
+    'naver, 'kakao', or 'lezhin'
+    default: 'naver'
+
+db_key: str
+    'test' or 'my'
+    default: 'test
+'''
+def insert_webtoon_tag(
+    df_key: str='excel',
+    platform: str='naver',
+    db_key: str='test'
+):
+    df = __get_data_frame(key=df_key, platform=platform)
+
+    conn = __get_connection(key=db_key)
+    cursor = __get_cursor(conn=conn)
+
+    __insert_webtoon_tag(conn=conn, cursor=cursor, df=df)
+
+    __close_cursor(cursor=cursor)
+    __close_connection(conn=conn)
+
+
+def __insert_review_like(
+    conn: pymysql.connections.Connection,
+    cursor: Cursor,
+    df: pd.DataFrame
+):
+    get_seq_query = \
+        'SELECT review_seq, user_seq \
+        FROM review_like'
+    cursor.execute(get_seq_query)
+    seqs = cursor.fetchall()
+
+    get_review_seq_query = \
+        'SELECT review_seq \
+        FROM review'
+    cursor.execute(get_review_seq_query)
+    review_seqs = cursor.fetchall()
+
+    get_user_seq_query = \
+        'SELECT user_seq \
+        FROM users'
+    cursor.execute(get_user_seq_query)
+    user_seqs = cursor.fetchall()
+
+    seq_set = set()
+    for review_seq_index, user_seq_index in zip(df['review_seq_index'], df['user_seq_index']):
+        review_seq = review_seqs[review_seq_index][0]
+        user_seq = user_seqs[user_seq_index][0]
+        if (review_seq, user_seq) not in seqs \
+        and (review_seq, user_seq) not in seq_set:
+            seq_set.add((review_seq, user_seq))
+            now = str(datetime.now().date())
+            insert_review_like_query = \
+                f'INSERT INTO \
+                review_like( \
+                    review_seq, \
+                    user_seq, \
+                    created_date, \
+                    last_modified_date) \
+                VALUES( \
+                    {review_seq}, \
+                    {user_seq}, \
+                    \'{now}\', \
+                    \'{now}\')'
+            
+            affected_rows_num = cursor.execute(insert_review_like_query)
+            if affected_rows_num != 1:
+                print('insert review_like error')
+            else:
+                conn.commit()
+
+'''
+Parameters
+----------
+db_key: str
+    'test' or 'my'
+    default: 'test
+
+method: str
+    'file' or 'new'
+    'file' -> read excel file
+    'new' -> generate new data
+'''
+def insert_review_like(db_key: str='test', method: str='file'):
+    if method == 'file':
+        try:
+            df = pd.read_excel(rldg.EXCEL_PATH)
+        except:
+            return
+    else:
+        df = rldg.generate()
+
+    conn = __get_connection(key=db_key)
+    cursor = __get_cursor(conn=conn)
+
+    __insert_review_like(conn=conn, cursor=cursor, df=df)
+
+    __close_cursor(cursor=cursor)
+    __close_connection(conn=conn)
+
+
+def __insert_webtoon_like(
+    conn: pymysql.connections.Connection,
+    cursor: Cursor,
+    df: pd.DataFrame
+):
+    get_seq_query = \
+        'SELECT webtoon_seq, user_seq \
+        FROM webtoon_like'
+    cursor.execute(get_seq_query)
+    seqs = cursor.fetchall()
+
+    get_webtoon_seq_query = \
+        'SELECT webtoon_seq \
+        FROM webtoon'
+    cursor.execute(get_webtoon_seq_query)
+    webtoon_seqs = cursor.fetchall()
+
+    get_user_seq_query = \
+        'SELECT user_seq \
+        FROM users'
+    cursor.execute(get_user_seq_query)
+    user_seqs = cursor.fetchall()
+
+    seq_set = set()
+    for webtoon_seq_index, user_seq_index in zip(df['webtoon_seq_index'], df['user_seq_index']):
+        webtoon_seq = webtoon_seqs[webtoon_seq_index][0]
+        user_seq = user_seqs[user_seq_index][0]
+        if (webtoon_seq, user_seq) not in seqs \
+        and (webtoon_seq, user_seq) not in seq_set:
+            seq_set.add((webtoon_seq, user_seq))
+            
+            get_start_date_query = \
+                f'SELECT start_date \
+                FROM webtoon \
+                WHERE webtoon_seq={webtoon_seq}'
+            cursor.execute(get_start_date_query)
+
+            start_date = cursor.fetchone()[0]
+            now = datetime.now().date()
+
+            delta = now - start_date
+            int_delta = (delta.days * 24 * 60 * 60) + delta.seconds
+            random_second = randrange(int_delta)
+            date = start_date + timedelta(seconds=random_second)
+
+            insert_review_like_query = \
+                f'INSERT INTO \
+                webtoon_like( \
+                    user_seq, \
+                    webtoon_seq, \
+                    created_date, \
+                    last_modified_date) \
+                VALUES( \
+                    {user_seq}, \
+                    {webtoon_seq}, \
+                    \'{date}\', \
+                    \'{date}\')'
+
+            affected_rows_num = cursor.execute(insert_review_like_query)
+            if affected_rows_num != 1:
+                print('insert review_like error')
+            else:
+                conn.commit()
+
+'''
+Parameters
+----------
+db_key: str
+    'test' or 'my'
+    default: 'test
+
+method: str
+    'file' or 'new'
+    'file' -> read excel file
+    'new' -> generate new data
+'''
+def insert_webtoon_like(db_key: str='test', method: str='file'):
+    if method == 'file':
+        try:
+            df = pd.read_excel(wldg.EXCEL_PATH)
+        except:
+            return
+    else:
+        df = wldg.generate()
+
+    conn = __get_connection(key=db_key)
+    cursor = __get_cursor(conn=conn)
+
+    __insert_webtoon_like(conn=conn, cursor=cursor, df=df)
 
     __close_cursor(cursor=cursor)
     __close_connection(conn=conn)
