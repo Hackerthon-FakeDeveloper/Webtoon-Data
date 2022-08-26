@@ -1,3 +1,4 @@
+from tokenize import group
 from typing import Dict, List, Any
 from pymysql.cursors import Cursor # for typing
 
@@ -9,7 +10,10 @@ from datetime import timedelta
 
 # add parent path
 import sys, os
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__)))) 
+sys.path.append(
+    os.path.dirname(
+        os.path.abspath(
+            os.path.dirname(__file__)))) 
 
 import crawler.naver_crawler as nc
 import crawler.kakao_crawler as kc
@@ -427,10 +431,9 @@ def __insert_review(
                 {user_seq}, \
                 {webtoon_seq})'
             affected_rows_num = cursor.execute(insert_nickname_query)
-            if affected_rows_num == 1:
-                conn.commit()
-            else:
+            if affected_rows_num != 1:
                 print(f'insert user error: {row["nickname"]}')
+    conn.commit()
     
 '''
 Parameters
@@ -717,3 +720,186 @@ def insert_webtoon_like(db_key: str='test', method: str='file'):
 
     __close_cursor(cursor=cursor)
     __close_connection(conn=conn)
+
+
+def __get_review_group_by_gender(cursor: Cursor) -> List[pd.DataFrame]:
+    get_review_query = \
+        f'SELECT score_first, score_second, score_third, user_seq, webtoon_seq \
+        FROM review'
+    cursor.execute(get_review_query)
+    rows = cursor.fetchall()
+    gender_list = []
+    score_first_list = []
+    score_second_list = []
+    score_third_list = []
+    user_seq_list = []
+    webtoon_seq_list = []
+    for row in rows:
+        score_first = int(row[0])
+        score_second = int(row[1])
+        score_third = int(row[2])
+        user_seq = int(row[3])
+        webtoon_seq = int(row[4])
+        get_gender_query = \
+            f'SELECT gender \
+            FROM users \
+            WHERE user_seq={user_seq}'
+        affected_rows_num = cursor.execute(get_gender_query)
+        if affected_rows_num != 1:
+            continue
+        gender = cursor.fetchone()[0]
+
+        gender_list.append(gender)
+        score_first_list.append(score_first)
+        score_second_list.append(score_second)
+        score_third_list.append(score_third)
+        user_seq_list.append(user_seq)
+        webtoon_seq_list.append(webtoon_seq)
+    
+    m_gender_list = []
+    m_score_first_list = []
+    m_score_second_list = []
+    m_score_third_list = []
+    m_user_seq_list = []
+    m_webtoon_seq_list = []
+    
+    f_gender_list = []
+    f_score_first_list = []
+    f_score_second_list = []
+    f_score_third_list = []
+    f_user_seq_list = []
+    f_webtoon_seq_list = []
+    for i in range(len(gender_list)):
+        if gender_list[i] == 'M':
+            m_gender_list.append(gender_list[i])
+            m_score_first_list.append(score_first_list[i])
+            m_score_second_list.append(score_second_list[i])
+            m_score_third_list.append(score_third_list[i])
+            m_user_seq_list.append(user_seq_list[i])
+            m_webtoon_seq_list.append(webtoon_seq_list[i])
+        elif gender_list[i] == 'F':
+            f_gender_list.append(gender_list[i])
+            f_score_first_list.append(score_first_list[i])
+            f_score_second_list.append(score_second_list[i])
+            f_score_third_list.append(score_third_list[i])
+            f_user_seq_list.append(user_seq_list[i])
+            f_webtoon_seq_list.append(webtoon_seq_list[i])
+
+    m_df = pd.DataFrame({
+        'score_first': m_score_first_list,
+        'score_second': m_score_second_list,
+        'score_third': m_score_third_list,
+        'user_seq': m_user_seq_list,
+        'webtoon_seq': m_webtoon_seq_list
+    })
+
+    f_df = pd.DataFrame({
+        'score_first': f_score_first_list,
+        'score_second': f_score_second_list,
+        'score_third': f_score_third_list,
+        'user_seq': f_user_seq_list,
+        'webtoon_seq': f_webtoon_seq_list
+    })
+
+    m_df, f_df = pd.read_excel('.\\data\\m_review.xlsx'), pd.read_excel('.\\data\\f_review.xlsx')
+    m_df = m_df.set_index('webtoon_seq')
+    m_df = m_df.groupby('webtoon_seq').mean()
+    m_df['score_mean'] = (m_df.loc[:, 'score_first':'score_third']).mean(axis=1)
+    
+    f_df = f_df.set_index('webtoon_seq')
+    f_df = f_df.groupby('webtoon_seq').mean()
+    f_df['score_mean'] = (m_df.loc[:, 'score_first':'score_third']).mean(axis=1)
+
+    return m_df, f_df
+
+
+'''
+Parameters
+----------
+db_key: str
+    'test' or 'my'
+    default: 'test
+'''
+def get_review_group_by_gender(db_key: str='test') -> List[pd.DataFrame]:
+    if db_key != 'test' and db_key != 'my':
+        return None
+
+    conn = __get_connection(key=db_key)
+    cursor = __get_cursor(conn=conn)
+
+    m_df, f_df = __get_review_group_by_gender(cursor=cursor)
+
+    __close_cursor(cursor=cursor)
+    __close_connection(conn=conn)
+
+    return m_df, f_df
+
+
+def __get_review_group_by_age(cursor: Cursor) -> List[pd.DataFrame]:
+    df_dict = {}
+    for age_range in [10, 20, 30]:
+        get_review_query = \
+            f'SELECT score_first, score_second, score_third, user_seq, webtoon_seq \
+            FROM review \
+            WHERE user_seq IN ( \
+                SELECT user_seq \
+                FROM users \
+                    WHERE {age_range} <= age AND age < {age_range + 10})'
+
+        cursor.execute(get_review_query)
+        rows = cursor.fetchall()
+        age_list = []
+        score_first_list = []
+        score_second_list = []
+        score_third_list = []
+        user_seq_list = []
+        webtoon_seq_list = []
+
+        for row in rows:
+            score_first = row[0]
+            score_second = row[1]
+            score_third = row[2]
+            user_seq = row[3]
+            webtoon_seq = row[4]
+
+            get_age_query = \
+                f'SELECT age \
+                FROM users \
+                WHERE user_seq={user_seq}'
+            cursor.execute(get_age_query)
+            age = int(cursor.fetchone()[0])
+
+            age_list.append(age)
+            score_first_list.append(score_first)
+            score_second_list.append(score_second)
+            score_third_list.append(score_third)
+            user_seq_list.append(user_seq)
+            webtoon_seq_list.append(webtoon_seq)
+
+        df = pd.DataFrame({
+            'age': age_list,
+            'score_first': score_first_list,
+            'score_second': score_second_list,
+            'score_third': score_third_list,
+            'user_seq': user_seq_list,
+            'webtoon_seq': webtoon_seq_list
+        })
+        df_dict[age_range] = df
+
+        df.to_excel(f'.\\data\\{age_range}_review.xlsx')
+
+    return df_dict[10], df_dict[20], df_dict[30]
+
+def get_review_group_by_age(db_key: str='test') -> List[pd.DataFrame]:
+    if db_key != 'test' and db_key != 'my':
+        return None
+
+    conn = __get_connection(key=db_key)
+    cursor = __get_cursor(conn=conn)
+
+    df_10, df_20, df_30 = __get_review_group_by_age(cursor=cursor)
+
+    __close_cursor(cursor=cursor)
+    __close_connection(conn=conn)
+
+    return df_10, df_20, df_30
