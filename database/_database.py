@@ -26,24 +26,24 @@ import generator.webtoon_like_data_generator as wldg
 
 def __get_my_database() -> Dict[str, Any]:
     database: Dict[str, Any] = {
-        'host': HOST,
-        'user': USER,
-        'password': PASSWORD,
-        'db': DATABASE,
-        'port': PORT,
-        'charset': ENCODING,
+        'host': {{YOUR_HOST}},
+        'user': {{YOUR_USER}},
+        'password': {{YOUR_PASSWORD}},
+        'db': {{YOUR_DATABASE}},
+        'port': {{YOUR_PORT}},
+        'charset': {{YOUR_ENCODING}},
         'use_unicode': <type 'bool'>
     }
     return database
 
 def __get_test_database() -> Dict[str, Any]:
     database: Dict[str, Any] = {
-        'host': HOST,
-        'user': USER,
-        'password': PASSWORD,
-        'db': DATABASE,
-        'port': PORT,
-        'charset': ENCODING,
+        'host': {{YOUR_HOST}},
+        'user': {{YOUR_USER}},
+        'password': {{YOUR_PASSWORD}},
+        'db': {{YOUR_DATABASE}},
+        'port': {{YOUR_PORT}},
+        'charset': {{YOUR_ENCODING}},
         'use_unicode': <type 'bool'>
     }
     return database
